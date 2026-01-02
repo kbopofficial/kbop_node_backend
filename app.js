@@ -38,7 +38,7 @@ const auth = (req, res, next) => {
     }
 };
 
-// app.use(auth)
+app.use(auth)
 
 app.get('/all_bus', async (req, res) => {
     try {
