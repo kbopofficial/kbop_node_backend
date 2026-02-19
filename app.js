@@ -69,14 +69,26 @@ app.get('/all_bus_location', async (req, res) => {
         let query = { zone: zone };
 
         // Add Date Filter if param exists
+
+
         if (last_updated) {
-            const checkDate = new Date(last_updated);
+            // Sanitize: remove surrounding quotes if present (common mistake in manual requests)
+            let cleanDateStr = last_updated.trim().replace(/^"|"$/g, '');
+            const checkDate = new Date(cleanDateStr);
+
+            // Hardcoded threshold for legacy data
+            const thresholdDate = new Date("2026-02-20T17:35:12.123Z");
+
             if (!isNaN(checkDate.getTime())) {
-                query.updatedAt = { $gt: checkDate };
+                // Return all if date is old (<= threshold), else apply filter
+                if (checkDate > thresholdDate) {
+                    query.updatedAt = { $gt: checkDate };
+                }
             }
         }
 
         // Fetch Data
+
         const buses = await Location_BUS_SCHEMA.find(query)
             .skip(skip)
             .limit(size)
@@ -114,14 +126,14 @@ app.get('/all_bus_location', async (req, res) => {
 app.get('/disabled', async (req, res) => {
     try {
         let { zone } = req.query;
-        const disabledBuses = await Location_BUS_SCHEMA.find({zone:zone, enable: false }).lean();
+        const disabledBuses = await Location_BUS_SCHEMA.find({ zone: zone, enable: false }).lean();
 
         if (disabledBuses.length === 0) {
             return res.status(404).json({ message: "No disabled buses found." });
         }
 
         res.json({
-             disabledBuses
+            disabledBuses
         });
     } catch (error) {
         console.error("Error fetching disabled buses:", error);
@@ -188,10 +200,10 @@ app.put('/update_bus_location', async (req, res) => {
         return res.status(400).json({ error: "Bus ID is required" });
     }
     try {
-       const updatedBus = await Location_BUS_SCHEMA.findByIdAndUpdate(
+        const updatedBus = await Location_BUS_SCHEMA.findByIdAndUpdate(
             id,
-            { $set: busDetails }, 
-            { 
+            { $set: busDetails },
+            {
                 new: true,           // Returns the modified document
                 runValidators: true, // Ensures data matches your schema rules
                 timestamps: true     // Usually true by default if enabled in schema
