@@ -77,12 +77,15 @@ app.get('/all_bus_location', async (req, res) => {
             const checkDate = new Date(cleanDateStr);
 
             // Hardcoded threshold for legacy data
-            const thresholdDate = new Date("2026-02-20T17:35:12.123Z");
+            const thresholdDate = new Date("2026-04-07T00:00:00.000Z");
 
             if (!isNaN(checkDate.getTime())) {
                 // Return all if date is old (<= threshold), else apply filter
                 if (checkDate > thresholdDate) {
-                    query.updatedAt = { $gt: checkDate };
+                    query.$or = [
+                        { updatedAt: { $gt: checkDate } },
+                        { createdAt: { $gt: checkDate } }
+                    ];
                 }
             }
         }
