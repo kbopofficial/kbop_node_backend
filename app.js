@@ -95,7 +95,7 @@ app.get('/all_bus_location', async (req, res) => {
         const buses = await Location_BUS_SCHEMA.find(query)
             .skip(skip)
             .limit(size)
-            .sort({ updatedAt: -1 }) // Get newest updates first
+            .sort({ updatedAt: -1, _id: 1 }) // Stable sort for pagination; newest updates first, then by ID
             .lean();
 
         // Metadata for Frontend
