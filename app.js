@@ -38,6 +38,16 @@ const auth = (req, res, next) => {
     }
 };
 
+// Health check endpoint (public - no auth required)
+app.get('/health', (req, res) => {
+    res.status(200).json({
+        status: 'ok',
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development',
+    });
+});
+
 app.use(auth)
 
 app.get('/all_bus', async (req, res) => {
