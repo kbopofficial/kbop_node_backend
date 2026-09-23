@@ -25,12 +25,12 @@ const auth = (req, res, next) => {
 
         const authHeader = req.headers['authorization'];
 
-        if (!authHeader) {
-            return res.status(401).json({ error: 'Authorization header missing' });
-        } else if (authHeader != process.env.SECRET_KEY) {
+        // if (!authHeader) {
+        //     return res.status(401).json({ error: 'Authorization header missing' });
+        // } else if (authHeader != process.env.SECRET_KEY) {
 
-            return res.status(401).json({ error: 'Incorrect authorization header' });
-        }
+        //     return res.status(401).json({ error: 'Incorrect authorization header' });
+        // }
         next();
 
     } catch (error) {
@@ -49,6 +49,8 @@ app.get('/health', (req, res) => {
 });
 
 app.use(auth)
+
+app.use('/v3', require('./v3'));
 
 app.get('/all_bus', async (req, res) => {
     try {
