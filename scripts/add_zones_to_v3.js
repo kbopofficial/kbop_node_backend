@@ -1,13 +1,13 @@
 /**
  * add_zones_to_v3.js
  *
- * Adds a `zones` array field to every bus and city in the v3 database.
+ * Adds a `zones` array field to every city in the v3 database (buses keep only
+ * their single `zone`; any `zones` field left on buses is removed).
  *
- *  - buses.zones  = [bus.zone] taken from the bus backup JSON (matched by _id);
- *                   [] when the backup has no/blank zone for that bus.
- *  - cities.zones = sorted unique zones of every bus whose `stops` reference the
- *                   city (bus.stops in v3 are City ObjectIds). Cities that no
- *                   bus references get [].
+ *  - cities.zones = sorted unique zones (taken from the bus backup JSON, matched
+ *                   by bus _id) of every bus whose `stops` reference the city
+ *                   (bus.stops in v3 are City ObjectIds). Cities that no bus
+ *                   references get [].
  *
  * Idempotent: zones is always recomputed and $set, so it is safe to re-run.
  *
@@ -65,15 +65,12 @@ async function main() {
     console.log(`  v3: ${buses.length} buses, ${cities.length} cities (backup: ${backupBuses.length} buses)`);
 
     const cityZones = new Map();
-    const busOps = [];
     let missingInBackup = 0;
 
     for (const bus of buses) {
         const id = String(bus._id);
         if (!zoneByBusId.has(id)) missingInBackup++;
         const zone = zoneByBusId.get(id) || '';
-        const zones = zone ? [zone] : [];
-        busOps.push({ updateOne: { filter: { _id: bus._id }, update: { $set: { zones } } } });
 
         if (!zone) continue;
         for (const cityId of bus.stops || []) {
@@ -98,7 +95,12 @@ async function main() {
     console.log(`  buses not found in backup: ${missingInBackup}`);
     console.log(`  cities by number of zones: ${JSON.stringify(dist)}`);
 
-    await bulk(Bus, busOps, 'buses');
+    if (DRY_RUN) {
+        console.log('  [dry-run] would $unset zones on buses');
+    } else {
+        const r = await Bus.collection.updateMany({ zones: { $exists: true } }, { $unset: { zones: '' } });
+        console.log(`  ✅  buses: removed zones from ${r.modifiedCount}`);
+    }
     await bulk(City, cityOps, 'cities');
 
     await v3db.close();

@@ -4,14 +4,6 @@ const { paginatedFind } = require('../../shared/pagination');
 const { touchSection } = require('../../shared/touchLastUpdated');
 const { syncCityZones } = require('../../shared/syncCityZones');
 
-// If a client sends the legacy `zone` without `zones`, derive `zones` from it.
-function withZones(body) {
-    if (body.zone !== undefined && body.zones === undefined) {
-        return { ...body, zones: body.zone ? [String(body.zone)] : [] };
-    }
-    return body;
-}
-
 async function getAllBuses(req, res) {
     try {
         const { zone } = req.query;
@@ -102,7 +94,7 @@ async function getBusesFromTo(req, res) {
 
 async function createBus(req, res) {
     try {
-        const newBus = await Bus.create(withZones(req.body));
+        const newBus = await Bus.create(req.body);
         await touchSection('buses');
         await syncCityZones(newBus.stops);
         res.status(201).json({ message: true, bus: newBus });
@@ -118,7 +110,7 @@ async function updateBus(req, res) {
         const before = await Bus.findById(id).select('stops').lean();
         const updatedBus = await Bus.findByIdAndUpdate(
             id,
-            { $set: withZones(req.body) },
+            { $set: req.body },
             { new: true, runValidators: true }
         );
         if (!updatedBus) {

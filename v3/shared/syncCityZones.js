@@ -2,12 +2,6 @@ const Bus = require('../modules/bus/bus.model');
 const City = require('../modules/city/city.model');
 const { touchSection } = require('./touchLastUpdated');
 
-// A bus's effective zones: its `zones` array, falling back to the legacy single `zone`.
-function busZones(bus) {
-    if (Array.isArray(bus.zones) && bus.zones.length > 0) return bus.zones;
-    return bus.zone ? [bus.zone] : [];
-}
-
 // Recomputes City.zones for the given city ids from the buses that currently stop there.
 // Only cities whose zones actually changed are written (so delta-sync isn't polluted);
 // touches lastUpdated.cities if any changed.
@@ -16,16 +10,16 @@ async function syncCityZones(cityIds) {
     if (ids.length === 0) return;
 
     const [buses, cities] = await Promise.all([
-        Bus.find({ stops: { $in: ids } }).select('zone zones stops').lean(),
+        Bus.find({ stops: { $in: ids } }).select('zone stops').lean(),
         City.find({ _id: { $in: ids } }).select('zones').lean()
     ]);
 
     const wanted = new Map(ids.map((id) => [id, new Set()]));
     for (const bus of buses) {
-        const zones = busZones(bus);
+        if (!bus.zone) continue;
         for (const stop of bus.stops) {
             const set = wanted.get(String(stop));
-            if (set) zones.forEach((z) => set.add(z));
+            if (set) set.add(bus.zone);
         }
     }
 
@@ -44,4 +38,4 @@ async function syncCityZones(cityIds) {
     }
 }
 
-module.exports = { syncCityZones, busZones };
+module.exports = { syncCityZones };

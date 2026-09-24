@@ -184,11 +184,10 @@ Create a new bus. *Triggers `lastUpdated.buses` touch.*
     "firstservice": 600,
     "lastservice": 2200,
     "zone": "North",
-    "zones": ["North"],
     "stops": ["66f1001...", "66f1002..."]
   }
   ```
-- If `zone` is sent without `zones`, `zones` is set to `[zone]`. Zones of the cities in `stops` are re-synced.
+- Zones of the cities in `stops` are re-synced from the buses' `zone`.
 - **Response `201 Created`**: `{ "message": true, "bus": { ... } }`
 
 #### 🔹 `PUT /v3/buses/:id`
@@ -404,7 +403,7 @@ Delete help item by ID.
 | Entity | Fields | References / Notes |
 | :--- | :--- | :--- |
 | **City** | `name` *(String)*, `lat` *(Number)*, `lng` *(Number)*, `zones` *(String[])*, `timestamps` | Base stop location |
-| **Bus** | `name`, `route`, `status`, `image_url`, `enable` *(Boolean)*, `firstservice` *(Number)*, `lastservice` *(Number)*, `zone`, `zones` *(String[])*, `stops` *(ObjectId[])*, `timestamps` | `stops` references `City` model |
+| **Bus** | `name`, `route`, `status`, `image_url`, `enable` *(Boolean)*, `firstservice` *(Number)*, `lastservice` *(Number)*, `zone`, `stops` *(ObjectId[])*, `timestamps` | `stops` references `City` model |
 | **LastUpdated** | `cities`, `buses`, `team`, `emergency`, `news`, `about`, `socialLinks` *(Dates)* | Singleton doc tracking write dates |
 | **Team** | `name`, `designation`, `image_path`, `insta`, `facebook`, `others`, `order`, `timestamps` | Team members |
 | **News** | `image_url`, `url`, `news`, `order`, `timestamps` | News feed |
