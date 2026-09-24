@@ -79,15 +79,16 @@ Get the global last-updated timestamps document.
 
 ### 🏙️ 2. Cities & Stops Module (`/v3/cities`)
 
-Manages city and bus stop geolocation entries (`name`, `lat`, `lng`).
+Manages city and bus stop geolocation entries (`name`, `lat`, `lng`, `zones`). `zones` is the list of zones of all buses that stop at the city; it is kept in sync automatically when buses are created, updated or deleted.
 
 #### 🔹 `GET /v3/cities`
 Fetch all cities in non-paginated format.
+- **Query Parameters**: `zone` *(string, optional)* - only cities whose `zones` contain it.
 - **Response `200 OK`**: Array of City objects.
 
 #### 🔹 `GET /v3/cities/allstops`
 Fetch paginated cities with delta-sync filtering.
-- **Query Parameters**: `size`, `packet`, `last_updated`
+- **Query Parameters**: `size`, `packet`, `last_updated`, `zone` *(optional)*
 - **Response `200 OK`**: Paginated envelope with City array in `data`.
 
 #### 🔹 `POST /v3/cities`
@@ -97,7 +98,8 @@ Create a new city/stop. *Triggers `lastUpdated.cities` touch.*
   {
     "name": "Belagavi Central",
     "lat": 15.8497,
-    "lng": 74.4977
+    "lng": 74.4977,
+    "zones": ["1", "4"]
   }
   ```
 - **Response `201 Created`**:
@@ -109,6 +111,7 @@ Create a new city/stop. *Triggers `lastUpdated.cities` touch.*
       "name": "Belagavi Central",
       "lat": 15.8497,
       "lng": 74.4977,
+      "zones": ["1", "4"],
       "createdAt": "2026-09-23T12:00:00.000Z",
       "updatedAt": "2026-09-23T12:00:00.000Z"
     }
@@ -117,7 +120,7 @@ Create a new city/stop. *Triggers `lastUpdated.cities` touch.*
 
 #### 🔹 `PUT /v3/cities/:id`
 Update an existing city by ID. *Triggers `lastUpdated.cities` touch.*
-- **Request Body**: Partial or full fields (`name`, `lat`, `lng`).
+- **Request Body**: Partial or full fields (`name`, `lat`, `lng`, `zones`).
 - **Response `200 OK`**: `{ "message": "City updated successfully", "city": { ... } }`
 
 #### 🔹 `DELETE /v3/cities/:id`
@@ -181,9 +184,11 @@ Create a new bus. *Triggers `lastUpdated.buses` touch.*
     "firstservice": 600,
     "lastservice": 2200,
     "zone": "North",
+    "zones": ["North"],
     "stops": ["66f1001...", "66f1002..."]
   }
   ```
+- If `zone` is sent without `zones`, `zones` is set to `[zone]`. Zones of the cities in `stops` are re-synced.
 - **Response `201 Created`**: `{ "message": true, "bus": { ... } }`
 
 #### 🔹 `PUT /v3/buses/:id`
@@ -398,8 +403,8 @@ Delete help item by ID.
 
 | Entity | Fields | References / Notes |
 | :--- | :--- | :--- |
-| **City** | `name` *(String)*, `lat` *(Number)*, `lng` *(Number)*, `timestamps` | Base stop location |
-| **Bus** | `name`, `route`, `status`, `image_url`, `enable` *(Boolean)*, `firstservice` *(Number)*, `lastservice` *(Number)*, `zone`, `stops` *(ObjectId[])*, `timestamps` | `stops` references `City` model |
+| **City** | `name` *(String)*, `lat` *(Number)*, `lng` *(Number)*, `zones` *(String[])*, `timestamps` | Base stop location |
+| **Bus** | `name`, `route`, `status`, `image_url`, `enable` *(Boolean)*, `firstservice` *(Number)*, `lastservice` *(Number)*, `zone`, `zones` *(String[])*, `stops` *(ObjectId[])*, `timestamps` | `stops` references `City` model |
 | **LastUpdated** | `cities`, `buses`, `team`, `emergency`, `news`, `about`, `socialLinks` *(Dates)* | Singleton doc tracking write dates |
 | **Team** | `name`, `designation`, `image_path`, `insta`, `facebook`, `others`, `order`, `timestamps` | Team members |
 | **News** | `image_url`, `url`, `news`, `order`, `timestamps` | News feed |

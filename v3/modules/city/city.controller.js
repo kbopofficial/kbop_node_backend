@@ -4,7 +4,8 @@ const { touchSection } = require('../../shared/touchLastUpdated');
 
 async function getAllCities(req, res) {
     try {
-        const cities = await City.find().lean();
+        const { zone } = req.query;
+        const cities = await City.find(zone ? { zones: zone } : {}).lean();
         res.json(cities);
     } catch (error) {
         console.error('Error fetching cities:', error);
@@ -14,7 +15,8 @@ async function getAllCities(req, res) {
 
 async function getAllStops(req, res) {
     try {
-        const result = await paginatedFind(City, req.query);
+        const { zone } = req.query;
+        const result = await paginatedFind(City, req.query, zone ? { zones: zone } : {});
         res.json(result);
     } catch (error) {
         console.error('Error fetching stops:', error);
@@ -23,12 +25,12 @@ async function getAllStops(req, res) {
 }
 
 async function createCity(req, res) {
-    const { name, lat, lng } = req.body;
+    const { name, lat, lng, zones } = req.body;
     if (!name || lat === undefined || lng === undefined) {
         return res.status(400).json({ error: 'name, lat and lng are required' });
     }
     try {
-        const city = await City.create({ name, lat, lng });
+        const city = await City.create({ name, lat, lng, ...(zones !== undefined && { zones }) });
         await touchSection('cities');
         res.status(201).json({ message: 'City created', city });
     } catch (error) {

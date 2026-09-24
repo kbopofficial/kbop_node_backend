@@ -2,6 +2,15 @@ const Bus = require('./bus.model');
 require('../city/city.model'); // ensure City is registered on the v3 connection for populate('stops')
 const { paginatedFind } = require('../../shared/pagination');
 const { touchSection } = require('../../shared/touchLastUpdated');
+const { syncCityZones } = require('../../shared/syncCityZones');
+
+// If a client sends the legacy `zone` without `zones`, derive `zones` from it.
+function withZones(body) {
+    if (body.zone !== undefined && body.zones === undefined) {
+        return { ...body, zones: body.zone ? [String(body.zone)] : [] };
+    }
+    return body;
+}
 
 async function getAllBuses(req, res) {
     try {
@@ -93,8 +102,9 @@ async function getBusesFromTo(req, res) {
 
 async function createBus(req, res) {
     try {
-        const newBus = await Bus.create(req.body);
+        const newBus = await Bus.create(withZones(req.body));
         await touchSection('buses');
+        await syncCityZones(newBus.stops);
         res.status(201).json({ message: true, bus: newBus });
     } catch (error) {
         console.error('Error adding bus:', error);
@@ -105,15 +115,17 @@ async function createBus(req, res) {
 async function updateBus(req, res) {
     const { id } = req.params;
     try {
+        const before = await Bus.findById(id).select('stops').lean();
         const updatedBus = await Bus.findByIdAndUpdate(
             id,
-            { $set: req.body },
+            { $set: withZones(req.body) },
             { new: true, runValidators: true }
         );
         if (!updatedBus) {
             return res.status(404).json({ error: 'Bus not found' });
         }
         await touchSection('buses');
+        await syncCityZones([...(before ? before.stops : []), ...updatedBus.stops]);
         res.json({ message: 'Bus updated', bus: updatedBus });
     } catch (error) {
         console.error('Error updating bus:', error);
@@ -129,6 +141,7 @@ async function deleteBus(req, res) {
             return res.status(404).json({ error: 'Bus not found' });
         }
         await touchSection('buses');
+        await syncCityZones(deletedBus.stops);
         res.json({ message: 'Bus deleted successfully' });
     } catch (error) {
         console.error('Error deleting bus:', error);

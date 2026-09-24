@@ -5,7 +5,9 @@ const CitySchema = mongoose.Schema({
     name: { type: String, required: true },
     // Nullable: some legacy stops were recorded without a geocoded position.
     lat: { type: Number, default: null },
-    lng: { type: Number, default: null }
+    lng: { type: Number, default: null },
+    // Zones of every bus that stops here (a city can be shared across zones).
+    zones: { type: [String], default: [] }
 }, { timestamps: true });
 
 const City = v3db.model('City', CitySchema);

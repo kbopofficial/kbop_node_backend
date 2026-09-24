@@ -10,6 +10,7 @@ const BusSchema = mongoose.Schema({
     firstservice: { type: Number, default: null },
     lastservice: { type: Number, default: null },
     zone: { type: String, default: '' },
+    zones: { type: [String], default: [] },
     // Ordered array of City references; array order = stop order along the route.
     stops: [{ type: mongoose.Schema.Types.ObjectId, ref: 'City' }],
     lastUpdated: { type: Date, default: null }
