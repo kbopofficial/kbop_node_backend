@@ -1,13 +1,24 @@
 const Emergency = require('./emergency.model');
 const { touchSection } = require('../../shared/touchLastUpdated');
+const { paginatedFind } = require('../../shared/pagination');
 
 async function getAllEmergency(req, res) {
     try {
-        const items = await Emergency.find();
+        const items = await Emergency.find({ isDeleted: { $ne: true } });
         res.json(items);
     } catch (error) {
         console.error('Error fetching emergency contacts:', error);
         res.status(500).json({ error: 'Failed to fetch emergency contacts' });
+    }
+}
+
+// Delta sync: send last_updated (and include_deleted=true to also receive tombstones).
+async function syncEmergency(req, res) {
+    try {
+        res.json(await paginatedFind(Emergency, req.query, {}, null, { softDelete: true }));
+    } catch (error) {
+        console.error('Error syncing emergency contacts:', error);
+        res.status(500).json({ error: 'Failed to sync emergency contacts' });
     }
 }
 
@@ -29,8 +40,8 @@ async function createEmergency(req, res) {
 async function updateEmergency(req, res) {
     const { id } = req.params;
     try {
-        const updated = await Emergency.findByIdAndUpdate(
-            id,
+        const updated = await Emergency.findOneAndUpdate(
+            { _id: id, isDeleted: { $ne: true } },
             { $set: req.body },
             { new: true, runValidators: true }
         );
@@ -48,7 +59,12 @@ async function updateEmergency(req, res) {
 async function deleteEmergency(req, res) {
     const { id } = req.params;
     try {
-        const deleted = await Emergency.findByIdAndDelete(id);
+        // Soft delete: keep the document as a tombstone so delta-syncing clients learn about it.
+        const deleted = await Emergency.findOneAndUpdate(
+            { _id: id, isDeleted: { $ne: true } },
+            { $set: { isDeleted: true, deletedAt: new Date() } },
+            { new: true }
+        );
         if (!deleted) {
             return res.status(404).json({ error: 'Emergency contact not found' });
         }
@@ -60,4 +76,4 @@ async function deleteEmergency(req, res) {
     }
 }
 
-module.exports = { getAllEmergency, createEmergency, updateEmergency, deleteEmergency };
+module.exports = { getAllEmergency, syncEmergency, createEmergency, updateEmergency, deleteEmergency };

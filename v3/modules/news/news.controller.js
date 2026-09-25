@@ -1,13 +1,24 @@
 const News = require('./news.model');
 const { touchSection } = require('../../shared/touchLastUpdated');
+const { paginatedFind } = require('../../shared/pagination');
 
 async function getAllNews(req, res) {
     try {
-        const news = await News.find();
+        const news = await News.find({ isDeleted: { $ne: true } });
         res.json(news);
     } catch (error) {
         console.error('Error fetching news:', error);
         res.status(500).json({ error: 'Failed to fetch news' });
+    }
+}
+
+// Delta sync: send last_updated (and include_deleted=true to also receive tombstones).
+async function syncNews(req, res) {
+    try {
+        res.json(await paginatedFind(News, req.query, {}, null, { softDelete: true }));
+    } catch (error) {
+        console.error('Error syncing news:', error);
+        res.status(500).json({ error: 'Failed to sync news' });
     }
 }
 
@@ -29,8 +40,8 @@ async function createNews(req, res) {
 async function updateNews(req, res) {
     const { id } = req.params;
     try {
-        const updatedNews = await News.findByIdAndUpdate(
-            id,
+        const updatedNews = await News.findOneAndUpdate(
+            { _id: id, isDeleted: { $ne: true } },
             { $set: req.body },
             { new: true, runValidators: true }
         );
@@ -48,7 +59,12 @@ async function updateNews(req, res) {
 async function deleteNews(req, res) {
     const { id } = req.params;
     try {
-        const deletedNews = await News.findByIdAndDelete(id);
+        // Soft delete: keep the document as a tombstone so delta-syncing clients learn about it.
+        const deletedNews = await News.findOneAndUpdate(
+            { _id: id, isDeleted: { $ne: true } },
+            { $set: { isDeleted: true, deletedAt: new Date() } },
+            { new: true }
+        );
         if (!deletedNews) {
             return res.status(404).json({ error: 'News not found' });
         }
@@ -60,4 +76,4 @@ async function deleteNews(req, res) {
     }
 }
 
-module.exports = { getAllNews, createNews, updateNews, deleteNews };
+module.exports = { getAllNews, syncNews, createNews, updateNews, deleteNews };

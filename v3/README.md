@@ -22,11 +22,12 @@ V3 uses a dedicated Mongoose connection via `MONGO_URL_V3` environment variable.
 Whenever write operations (`POST`, `PUT`, `DELETE`) occur on tracked modules (`cities`, `buses`, `team`, `emergency`, `news`, `about`, `socialLinks`), the system automatically updates the global timestamp in the `LastUpdated` document. Clients use `GET /v3/lastupdated` to check if cached local data needs re-syncing.
 
 ### 3. Delta-Sync & Pagination (`shared/pagination.js`)
-Used by endpoints like `/v3/cities/allstops` and `/v3/buses`.
+Used by endpoints like `/v3/cities/allstops`, `/v3/buses`, `/v3/team/sync`, `/v3/news/sync` and `/v3/emergency/sync`.
 - **Query Parameters**:
   - `size` *(number, default: 100)*: Items per page packet.
   - `packet` *(number, default: 1)*: Page packet number (1-indexed).
   - `last_updated` *(ISO date string, optional)*: Filter for records created or updated after this date (`$or: [{ updatedAt: { $gt: checkDate } }, { createdAt: { $gt: checkDate } }]`).
+  - `include_deleted` *(`true`, optional)*: Only honoured together with a valid `last_updated`. Also returns soft-deleted records (see below). Without it, soft-deleted records are never returned.
 
 - **Paginated Response Envelope**:
   ```json
@@ -47,6 +48,22 @@ Used by endpoints like `/v3/cities/allstops` and `/v3/buses`.
     "data": []
   }
   ```
+
+### 4. Soft Delete & Tombstones
+Cities, buses, team members, news and emergency contacts are **soft-deleted**: `DELETE` sets `isDeleted: true` and `deletedAt` instead of removing the document. Because Mongoose bumps `updatedAt`, the deletion shows up in the delta-sync query, which lets clients evict the item from their local cache (a hard-deleted document could never be found by a `last_updated` filter).
+
+- Every read endpoint, and the paginated endpoints on a full fetch (no `last_updated`), **hide** soft-deleted records.
+- A delta sync (`last_updated` + `include_deleted=true`) **returns** them as tombstones, i.e. documents with `isDeleted: true`. Clients should remove those ids from their cache and store the rest. Tombstones are opt-in so that clients that don't send `include_deleted` never mistake a deleted record for a live one.
+- `PUT` and `DELETE` on an already soft-deleted record return `404`.
+- Deleted cities are omitted from the populated `stops` of buses, and deleted buses no longer count towards a city's `zones`.
+- Tombstones are not purged automatically yet.
+
+**Delta-sync client flow**
+```
+GET /v3/buses?last_updated=<lastSync>&include_deleted=true&size=100&packet=1
+  -> for each doc in data: isDeleted ? cache.remove(doc._id) : cache.put(doc._id, doc)
+```
+`GET /v3/cities` (plain array) ignores `last_updated`, so use `/v3/cities/allstops` for syncing.
 
 ---
 
@@ -90,12 +107,12 @@ Manages city and bus stop geolocation entries (`name`, `lat`, `lng`, `zones`). `
 #### 🔹 `GET /v3/cities`
 Fetch all cities in non-paginated format.
 - **Query Parameters**: `zone` *(string, optional)* - only cities whose `zones` contain it.
-- **Response `200 OK`**: Array of City objects.
+- **Response `200 OK`**: Array of live (non-deleted) City objects.
 
 #### 🔹 `GET /v3/cities/allstops`
 Fetch paginated cities with delta-sync filtering.
-- **Query Parameters**: `size`, `packet`, `last_updated`, `zone` *(optional)*
-- **Response `200 OK`**: Paginated envelope with City array in `data`.
+- **Query Parameters**: `size`, `packet`, `last_updated`, `include_deleted`, `zone` *(optional)*
+- **Response `200 OK`**: Paginated envelope with City array in `data`. Includes tombstones (`isDeleted: true`) when `last_updated` and `include_deleted=true` are sent.
 
 #### 🔹 `POST /v3/cities`
 Create a new city/stop. *Triggers `lastUpdated.cities` touch.*
@@ -130,8 +147,9 @@ Update an existing city by ID. *Triggers `lastUpdated.cities` touch.*
 - **Response `200 OK`**: `{ "message": "City updated successfully", "city": { ... } }`
 
 #### 🔹 `DELETE /v3/cities/:id`
-Delete a city by ID. *Triggers `lastUpdated.cities` touch.*
+Soft-delete a city by ID (sets `isDeleted`). *Triggers `lastUpdated.cities` touch.*
 - **Response `200 OK`**: `{ "message": "City deleted successfully", "city": { ... } }`
+- **Response `404 Not Found`**: City does not exist or is already deleted.
 
 ---
 
@@ -143,8 +161,8 @@ Manages bus schedules, routes, status, and associated stop sequences.
 Fetch paginated buses (with populated `stops` arrays).
 - **Query Parameters**:
   - `zone` *(string, optional)*: Filter by zone name.
-  - `size`, `packet`, `last_updated`: Delta-sync pagination.
-- **Response `200 OK`**: Paginated envelope with Bus objects (populated City stops) in `data`.
+  - `size`, `packet`, `last_updated`, `include_deleted`: Delta-sync pagination.
+- **Response `200 OK`**: Paginated envelope with Bus objects (populated City stops) in `data`. Includes tombstones (`isDeleted: true`) when `last_updated` and `include_deleted=true` are sent.
 
 #### 🔹 `GET /v3/buses/names`
 Get lightweight array of bus names, zones and IDs.
@@ -201,8 +219,9 @@ Update a bus by ID. *Triggers `lastUpdated.buses` touch.*
 - **Response `200 OK`**: `{ "message": "Bus updated", "bus": { ... } }`
 
 #### 🔹 `DELETE /v3/buses/:id`
-Delete a bus by ID. *Triggers `lastUpdated.buses` touch.*
+Soft-delete a bus by ID (sets `isDeleted`). *Triggers `lastUpdated.buses` touch.*
 - **Response `200 OK`**: `{ "message": "Bus deleted successfully" }`
+- **Response `404 Not Found`**: Bus does not exist or is already deleted.
 
 ---
 
@@ -211,7 +230,12 @@ Delete a bus by ID. *Triggers `lastUpdated.buses` touch.*
 Manages organization team members.
 
 #### 🔹 `GET /v3/team`
-- **Response `200 OK`**: Array of Team Member objects.
+- **Response `200 OK`**: Array of live Team Member objects.
+
+#### 🔹 `GET /v3/team/sync`
+Delta-sync team members, paginated. Send `last_updated`, and `include_deleted=true` to also receive tombstones (`isDeleted: true`).
+- **Query Parameters**: `size`, `packet`, `last_updated`, `include_deleted`
+- **Response `200 OK`**: Paginated envelope in the standard format.
 
 #### 🔹 `POST /v3/team`
 Create a new team member. *Triggers `lastUpdated.team` touch.*
@@ -233,7 +257,7 @@ Create a new team member. *Triggers `lastUpdated.team` touch.*
 Update a team member by ID. *Triggers `lastUpdated.team` touch.*
 
 #### 🔹 `DELETE /v3/team/:id`
-Delete a team member by ID. *Triggers `lastUpdated.team` touch.*
+Soft-delete a team member by ID. *Triggers `lastUpdated.team` touch.*
 
 ---
 
@@ -242,7 +266,12 @@ Delete a team member by ID. *Triggers `lastUpdated.team` touch.*
 Manages news items and announcements.
 
 #### 🔹 `GET /v3/news`
-- **Response `200 OK`**: Array of News objects.
+- **Response `200 OK`**: Array of live News objects.
+
+#### 🔹 `GET /v3/news/sync`
+Delta-sync news items, paginated. Send `last_updated`, and `include_deleted=true` to also receive tombstones (`isDeleted: true`).
+- **Query Parameters**: `size`, `packet`, `last_updated`, `include_deleted`
+- **Response `200 OK`**: Paginated envelope in the standard format.
 
 #### 🔹 `POST /v3/news`
 Create a news entry. *Triggers `lastUpdated.news` touch.*
@@ -261,7 +290,7 @@ Create a news entry. *Triggers `lastUpdated.news` touch.*
 Update a news item by ID. *Triggers `lastUpdated.news` touch.*
 
 #### 🔹 `DELETE /v3/news/:id`
-Delete a news item by ID. *Triggers `lastUpdated.news` touch.*
+Soft-delete a news item by ID. *Triggers `lastUpdated.news` touch.*
 
 ---
 
@@ -290,7 +319,12 @@ Delete about entry by ID. *Triggers `lastUpdated.about` touch.*
 Manages emergency helpline contacts.
 
 #### 🔹 `GET /v3/emergency`
-- **Response `200 OK`**: Array of Emergency objects.
+- **Response `200 OK`**: Array of live Emergency objects.
+
+#### 🔹 `GET /v3/emergency/sync`
+Delta-sync emergency contacts, paginated. Send `last_updated`, and `include_deleted=true` to also receive tombstones (`isDeleted: true`).
+- **Query Parameters**: `size`, `packet`, `last_updated`, `include_deleted`
+- **Response `200 OK`**: Paginated envelope in the standard format.
 
 #### 🔹 `POST /v3/emergency`
 Create emergency contact. *Triggers `lastUpdated.emergency` touch.*
@@ -301,7 +335,7 @@ Create emergency contact. *Triggers `lastUpdated.emergency` touch.*
 Update emergency contact by ID. *Triggers `lastUpdated.emergency` touch.*
 
 #### 🔹 `DELETE /v3/emergency/:id`
-Delete emergency contact by ID. *Triggers `lastUpdated.emergency` touch.*
+Soft-delete emergency contact by ID. *Triggers `lastUpdated.emergency` touch.*
 
 ---
 
@@ -408,14 +442,16 @@ Delete help item by ID.
 
 | Entity | Fields | References / Notes |
 | :--- | :--- | :--- |
-| **City** | `name` *(String)*, `lat` *(Number)*, `lng` *(Number)*, `zones` *(String[])*, `timestamps` | Base stop location |
-| **Bus** | `name`, `route`, `status`, `image_url`, `enable` *(Boolean)*, `firstservice` *(Number)*, `lastservice` *(Number)*, `zone`, `stops` *(ObjectId[])*, `timestamps` | `stops` references `City` model |
+| **City** | `name` *(String)*, `lat` *(Number)*, `lng` *(Number)*, `zones` *(String[])*, `isDeleted`, `deletedAt`, `timestamps` | Base stop location |
+| **Bus** | `name`, `route`, `status`, `image_url`, `enable` *(Boolean)*, `firstservice` *(Number)*, `lastservice` *(Number)*, `zone`, `stops` *(ObjectId[])*, `isDeleted`, `deletedAt`, `timestamps` | `stops` references `City` model |
 | **LastUpdated** | `cities`, `buses`, `team`, `emergency`, `news`, `about`, `socialLinks` *(Dates)* | Singleton doc tracking write dates |
-| **Team** | `name`, `designation`, `image_path`, `insta`, `facebook`, `others`, `order`, `timestamps` | Team members |
-| **News** | `image_url`, `url`, `news`, `order`, `timestamps` | News feed |
+| **Team** | `name`, `designation`, `image_path`, `insta`, `facebook`, `others`, `order`, `isDeleted`, `deletedAt`, `timestamps` | Team members |
+| **News** | `image_url`, `url`, `news`, `order`, `isDeleted`, `deletedAt`, `timestamps` | News feed |
 | **About** | `about`, `version`, `timestamps` | Application metadata |
-| **Emergency** | `title`, `value`, `order`, `timestamps` | Emergency contacts |
+| **Emergency** | `title`, `value`, `order`, `isDeleted`, `deletedAt`, `timestamps` | Emergency contacts |
 | **SocialLink** | `platform`, `url`, `order`, `timestamps` | Social links |
 | **Admin** | `name`, `designation`, `image_path`, `email_id`, `phone`, `main` *(Boolean, master admin)*, `local_admin` *(Boolean)*, `community_admin` *(Boolean)*, `timestamps` | System administrators |
 | **Event** | `name`, `image_url`, `url`, `order`, `expiresAt` *(Date)* | TTL index: `expiresAt` (auto-purged) |
 | **Help** | `info`, `url`, `timestamps` | FAQ / Help resources |
+
+`isDeleted` *(Boolean, default `false`)* and `deletedAt` *(Date)* mark soft-deleted records; see [Soft Delete & Tombstones](#4-soft-delete--tombstones).

@@ -8,7 +8,10 @@ const TeamSchema = mongoose.Schema({
     insta: String,
     facebook: String,
     others: String,
-    order: Number
+    order: Number,
+    // Soft delete: tombstones stay in the collection so delta-syncing clients can evict them.
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date, default: null }
 }, { timestamps: true });
 
 const Team = v3db.model('Team', TeamSchema);
