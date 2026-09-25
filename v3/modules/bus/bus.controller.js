@@ -18,7 +18,7 @@ async function getAllBuses(req, res) {
 
 async function getBusNames(req, res) {
     try {
-        const buses = await Bus.find().select('_id name').lean();
+        const buses = await Bus.find().select('_id name zone').lean();
         res.json(buses);
     } catch (error) {
         console.error('Error fetching bus names:', error);

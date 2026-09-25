@@ -7,7 +7,9 @@ const AdminSchema = mongoose.Schema({
     image_path: String,
     email_id: String,
     phone: Number,
-    main: Boolean
+    main: Boolean, // master admin
+    local_admin: Boolean,
+    community_admin: Boolean
 }, { timestamps: true });
 
 const Admin = v3db.model('Admin', AdminSchema);

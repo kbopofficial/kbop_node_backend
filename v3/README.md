@@ -71,9 +71,15 @@ Get the global last-updated timestamps document.
     "emergency": "2026-09-15T12:00:00.000Z",
     "news": "2026-09-22T14:20:00.000Z",
     "about": "2026-08-01T00:00:00.000Z",
-    "socialLinks": "2026-09-10T09:45:00.000Z"
+    "socialLinks": "2026-09-10T09:45:00.000Z",
+    "admin": {
+      "master_admin": true,
+      "local_admin": false,
+      "community_admin": false
+    }
   }
   ```
+  The `admin` flags are resolved from the optional `useremail` request header, matched case-insensitively against `email_id` in the Admin collection (`master_admin` ← `main`, `local_admin`, `community_admin`). If the header is missing or matches no admin, all flags are `false`.
 
 ---
 
@@ -141,11 +147,11 @@ Fetch paginated buses (with populated `stops` arrays).
 - **Response `200 OK`**: Paginated envelope with Bus objects (populated City stops) in `data`.
 
 #### 🔹 `GET /v3/buses/names`
-Get lightweight array of bus names and IDs.
+Get lightweight array of bus names, zones and IDs.
 - **Response `200 OK`**:
   ```json
   [
-    { "_id": "66f2001...", "name": "Bus 12A" }
+    { "_id": "66f2001...", "name": "Bus 12A", "zone": "1" }
   ]
   ```
 
@@ -410,6 +416,6 @@ Delete help item by ID.
 | **About** | `about`, `version`, `timestamps` | Application metadata |
 | **Emergency** | `title`, `value`, `order`, `timestamps` | Emergency contacts |
 | **SocialLink** | `platform`, `url`, `order`, `timestamps` | Social links |
-| **Admin** | `name`, `designation`, `image_path`, `email_id`, `phone`, `main` *(Boolean)*, `timestamps` | System administrators |
+| **Admin** | `name`, `designation`, `image_path`, `email_id`, `phone`, `main` *(Boolean, master admin)*, `local_admin` *(Boolean)*, `community_admin` *(Boolean)*, `timestamps` | System administrators |
 | **Event** | `name`, `image_url`, `url`, `order`, `expiresAt` *(Date)* | TTL index: `expiresAt` (auto-purged) |
 | **Help** | `info`, `url`, `timestamps` | FAQ / Help resources |
