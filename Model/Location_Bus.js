@@ -23,7 +23,10 @@ const Location_Bus_Schema = mongoose.Schema({
       }
     }
   ],
-  zone: { type: String, default: '' }
+  zone: { type: String, default: '' },
+  // Soft delete: tombstones stay in the collection so delta-syncing clients can evict them.
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date, default: null }
 }, { timestamps: true })
 
 const Location_BUS_SCHEMA = mongoose.model('Location_BUS_SCHEMA', Location_Bus_Schema);

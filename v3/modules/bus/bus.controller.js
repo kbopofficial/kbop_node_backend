@@ -4,11 +4,14 @@ const { paginatedFind } = require('../../shared/pagination');
 const { touchSection } = require('../../shared/touchLastUpdated');
 const { syncCityZones } = require('../../shared/syncCityZones');
 
+// Soft-deleted cities are dropped from populated stops (populate removes non-matching array entries).
+const STOPS_POPULATE = { path: 'stops', match: { isDeleted: { $ne: true } } };
+
 async function getAllBuses(req, res) {
     try {
         const { zone } = req.query;
         const baseFilter = zone ? { zone } : {};
-        const result = await paginatedFind(Bus, req.query, baseFilter, { path: 'stops' });
+        const result = await paginatedFind(Bus, req.query, baseFilter, STOPS_POPULATE, { softDelete: true });
         res.json(result);
     } catch (error) {
         console.error('Error fetching buses:', error);
@@ -18,7 +21,7 @@ async function getAllBuses(req, res) {
 
 async function getBusNames(req, res) {
     try {
-        const buses = await Bus.find().select('_id name zone').lean();
+        const buses = await Bus.find({ isDeleted: { $ne: true } }).select('_id name zone').lean();
         res.json(buses);
     } catch (error) {
         console.error('Error fetching bus names:', error);
@@ -28,7 +31,7 @@ async function getBusNames(req, res) {
 
 async function getBusById(req, res) {
     try {
-        const bus = await Bus.findById(req.params.id).populate('stops');
+        const bus = await Bus.findOne({ _id: req.params.id, isDeleted: { $ne: true } }).populate(STOPS_POPULATE);
         if (!bus) {
             return res.status(404).json({ error: 'Bus not found' });
         }
@@ -42,9 +45,9 @@ async function getBusById(req, res) {
 async function getDisabledBuses(req, res) {
     try {
         const { zone } = req.query;
-        const filter = { enable: false };
+        const filter = { enable: false, isDeleted: { $ne: true } };
         if (zone) filter.zone = zone;
-        const buses = await Bus.find(filter).populate('stops').lean();
+        const buses = await Bus.find(filter).populate(STOPS_POPULATE).lean();
         if (buses.length === 0) {
             return res.status(404).json({ message: 'No disabled buses found.' });
         }
@@ -61,7 +64,7 @@ async function getBusesViaStop(req, res) {
         return res.status(400).json({ error: 'stop (city id) is required' });
     }
     try {
-        const buses = await Bus.find({ stops: stop }).populate('stops').lean();
+        const buses = await Bus.find({ stops: stop, isDeleted: { $ne: true } }).populate(STOPS_POPULATE).lean();
         if (buses.length === 0) {
             return res.status(404).json({ error: 'No buses found for the given stop' });
         }
@@ -78,7 +81,7 @@ async function getBusesFromTo(req, res) {
         return res.status(400).json({ error: 'from and to (city ids) are required' });
     }
     try {
-        const buses = await Bus.find({ stops: { $all: [from, to] } }).populate('stops').lean();
+        const buses = await Bus.find({ stops: { $all: [from, to] }, isDeleted: { $ne: true } }).populate(STOPS_POPULATE).lean();
         const filteredBuses = buses.filter(bus => {
             const stopIds = bus.stops.map(s => String(s._id));
             const fromIndex = stopIds.indexOf(from);
@@ -107,9 +110,9 @@ async function createBus(req, res) {
 async function updateBus(req, res) {
     const { id } = req.params;
     try {
-        const before = await Bus.findById(id).select('stops').lean();
-        const updatedBus = await Bus.findByIdAndUpdate(
-            id,
+        const before = await Bus.findOne({ _id: id, isDeleted: { $ne: true } }).select('stops').lean();
+        const updatedBus = await Bus.findOneAndUpdate(
+            { _id: id, isDeleted: { $ne: true } },
             { $set: req.body },
             { new: true, runValidators: true }
         );
@@ -128,7 +131,11 @@ async function updateBus(req, res) {
 async function deleteBus(req, res) {
     const { id } = req.params;
     try {
-        const deletedBus = await Bus.findByIdAndDelete(id);
+        // Soft delete: keep the document as a tombstone so delta-syncing clients learn about it.
+        const deletedBus = await Bus.findOneAndUpdate(
+            { _id: id, isDeleted: { $ne: true } },
+            { $set: { isDeleted: true, deletedAt: new Date() } }
+        );
         if (!deletedBus) {
             return res.status(404).json({ error: 'Bus not found' });
         }

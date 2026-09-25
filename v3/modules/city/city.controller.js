@@ -5,7 +5,7 @@ const { touchSection } = require('../../shared/touchLastUpdated');
 async function getAllCities(req, res) {
     try {
         const { zone } = req.query;
-        const cities = await City.find(zone ? { zones: zone } : {}).lean();
+        const cities = await City.find({ ...(zone && { zones: zone }), isDeleted: { $ne: true } }).lean();
         res.json(cities);
     } catch (error) {
         console.error('Error fetching cities:', error);
@@ -16,7 +16,7 @@ async function getAllCities(req, res) {
 async function getAllStops(req, res) {
     try {
         const { zone } = req.query;
-        const result = await paginatedFind(City, req.query, zone ? { zones: zone } : {});
+        const result = await paginatedFind(City, req.query, zone ? { zones: zone } : {}, null, { softDelete: true });
         res.json(result);
     } catch (error) {
         console.error('Error fetching stops:', error);
@@ -43,8 +43,8 @@ async function updateCity(req, res) {
     const { id } = req.params;
     const updateDetails = req.body;
     try {
-        const updatedCity = await City.findByIdAndUpdate(
-            id,
+        const updatedCity = await City.findOneAndUpdate(
+            { _id: id, isDeleted: { $ne: true } },
             { $set: updateDetails },
             { new: true, runValidators: true }
         );
@@ -62,7 +62,12 @@ async function updateCity(req, res) {
 async function deleteCity(req, res) {
     const { id } = req.params;
     try {
-        const deletedCity = await City.findByIdAndDelete(id);
+        // Soft delete: keep the document as a tombstone so delta-syncing clients learn about it.
+        const deletedCity = await City.findOneAndUpdate(
+            { _id: id, isDeleted: { $ne: true } },
+            { $set: { isDeleted: true, deletedAt: new Date() } },
+            { new: true }
+        );
         if (!deletedCity) {
             return res.status(404).json({ error: 'City not found' });
         }

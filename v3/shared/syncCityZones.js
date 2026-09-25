@@ -10,7 +10,7 @@ async function syncCityZones(cityIds) {
     if (ids.length === 0) return;
 
     const [buses, cities] = await Promise.all([
-        Bus.find({ stops: { $in: ids } }).select('zone stops').lean(),
+        Bus.find({ stops: { $in: ids }, isDeleted: { $ne: true } }).select('zone stops').lean(),
         City.find({ _id: { $in: ids } }).select('zones').lean()
     ]);
 

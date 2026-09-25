@@ -71,14 +71,14 @@ app.get('/all_bus', async (req, res) => {
 
 app.get('/all_bus_location', async (req, res) => {
     try {
-        let { zone, size, packet, last_updated } = req.query;
+        let { zone, size, packet, last_updated, include_deleted } = req.query;
 
         size = parseInt(size) || 100;
         packet = parseInt(packet) || 1;
         const skip = (packet - 1) * size;
 
-        // Base Query
-        let query = { zone: zone };
+        // Base Query. Soft-deleted buses are hidden unless a delta sync opts in below.
+        let query = { zone: zone, isDeleted: { $ne: true } };
 
         // Add Date Filter if param exists
 
@@ -94,6 +94,12 @@ app.get('/all_bus_location', async (req, res) => {
             if (!isNaN(checkDate.getTime())) {
                 // Return all if date is old (<= threshold), else apply filter
                 if (checkDate > thresholdDate) {
+                    // Delta sync: clients that send include_deleted=true also receive
+                    // tombstones (isDeleted: true) so they can evict them from their cache.
+                    // Older app versions don't send it and keep getting live buses only.
+                    if (include_deleted === 'true') {
+                        delete query.isDeleted;
+                    }
                     query.$or = [
                         { updatedAt: { $gt: checkDate } },
                         { createdAt: { $gt: checkDate } }
@@ -141,7 +147,7 @@ app.get('/all_bus_location', async (req, res) => {
 app.get('/disabled', async (req, res) => {
     try {
         let { zone } = req.query;
-        const disabledBuses = await Location_BUS_SCHEMA.find({ zone: zone, enable: false }).lean();
+        const disabledBuses = await Location_BUS_SCHEMA.find({ zone: zone, enable: false, isDeleted: { $ne: true } }).lean();
 
         if (disabledBuses.length === 0) {
             return res.status(404).json({ message: "No disabled buses found." });
@@ -215,8 +221,8 @@ app.put('/update_bus_location', async (req, res) => {
         return res.status(400).json({ error: "Bus ID is required" });
     }
     try {
-        const updatedBus = await Location_BUS_SCHEMA.findByIdAndUpdate(
-            id,
+        const updatedBus = await Location_BUS_SCHEMA.findOneAndUpdate(
+            { _id: id, isDeleted: { $ne: true } },
             { $set: busDetails },
             {
                 new: true,           // Returns the modified document
@@ -261,7 +267,12 @@ app.delete('/delete_bus_location', async (req, res) => {
         return res.status(400).json({ error: "Bus ID is required" });
     }
     try {
-        const deletedBus = await Location_BUS_SCHEMA.findByIdAndDelete(id);
+        // Soft delete: keep the document as a tombstone so delta-syncing clients learn about it.
+        // Mongoose timestamps bump updatedAt, which is what the delta query keys on.
+        const deletedBus = await Location_BUS_SCHEMA.findOneAndUpdate(
+            { _id: id, isDeleted: { $ne: true } },
+            { $set: { isDeleted: true, deletedAt: new Date() } }
+        );
 
         if (deletedBus) {
             res.json("Bus deleted successfully");
@@ -311,6 +322,7 @@ app.get('/via_bus_location', async (req, res) => {
         // Find buses where any stop has the key matching 'via'
         const buses = await Location_BUS_SCHEMA.find({
             enable: true,
+            isDeleted: { $ne: true },
             "stops.stop": via // Use the stop field inside the object in the 'stops' array
         });
 
@@ -352,7 +364,7 @@ app.get('/busName_location', async (req, res) => {
         return res.status(400).json({ error: "Bus Name is required" });
     }
     try {
-        const findBus = await Location_BUS_SCHEMA.find({ name: busName, enable: true });
+        const findBus = await Location_BUS_SCHEMA.find({ name: busName, enable: true, isDeleted: { $ne: true } });
         if (findBus.length === 0) {
             return res.status(404).json({ message: "Bus not found" });
         }
@@ -399,6 +411,7 @@ app.get('/from-to_location', async (req, res) => {
         // Step 1: Find buses that have both stops
         const buses = await Location_BUS_SCHEMA.find({
             enable: true,
+            isDeleted: { $ne: true },
             stops: {
                 $elemMatch: { stop: from }
             }
@@ -444,7 +457,7 @@ app.get('/busId_location', async (req, res) => {
     }
 
     try {
-        const bus = await Location_BUS_SCHEMA.findById(id)
+        const bus = await Location_BUS_SCHEMA.findOne({ _id: id, isDeleted: { $ne: true } })
         res.json(bus);
 
     } catch (error) {

@@ -12,7 +12,10 @@ const BusSchema = mongoose.Schema({
     zone: { type: String, default: '' },
     // Ordered array of City references; array order = stop order along the route.
     stops: [{ type: mongoose.Schema.Types.ObjectId, ref: 'City' }],
-    lastUpdated: { type: Date, default: null }
+    lastUpdated: { type: Date, default: null },
+    // Soft delete: tombstones stay in the collection so delta-syncing clients can evict them.
+    isDeleted: { type: Boolean, default: false },
+    deletedAt: { type: Date, default: null }
 }, { timestamps: true });
 
 const Bus = v3db.model('Bus', BusSchema);
